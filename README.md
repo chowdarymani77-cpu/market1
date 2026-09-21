@@ -1,0 +1,155 @@
+# Nifty Morning Golden Zone + EMA
+
+Source: [nifty_morning_golden_zone.pine](nifty_morning_golden_zone.pine)
+
+This Pine Script v6 indicator identifies morning direction, fixes a Fibonacci pullback zone, and marks BUY or SELL signals when a candle touches that zone and crosses the 9 EMA. It draws signals and exposes alert conditions; it does not place orders or implement a backtest strategy.
+
+## Chart and time requirements
+
+- Intended chart: Nifty, standard 5-minute candles. The script rejects other timeframes and synthetic chart types. It does not restrict the ticker, so select Nifty yourself.
+- All session calculations use `Asia/Kolkata` (IST), independently of the chart display timezone.
+- Sessions run Monday through Friday, when chart data exists.
+- Morning observation: 09:15 inclusive to 10:00 exclusive. This includes nine candles opening at 09:15, 09:20, ..., 09:55.
+- The morning range and initial direction are established when the 09:55 candle closes at 10:00. The candle opening at 10:00 is excluded from the morning calculation. Later zone failures can reverse the active direction.
+- Signal candles must open from 10:00 inclusive to 15:30 exclusive. Thus the earliest possible signal confirms at 10:05; the last possible signal confirms at 15:30 on the 15:25 candle.
+- Morning values and the daily signal allowance reset on each new IST calendar date. The EMA is continuous across days and does not reset.
+
+## 1. Measure the morning
+
+Define:
+
+| Symbol | Meaning |
+| --- | --- |
+| O | Open of the 09:15 candle |
+| H | Highest high of the nine morning candles |
+| L | Lowest low of the nine morning candles |
+| C | Close of the 09:55 candle, known at 10:00 |
+| R | Morning range: H - L |
+| p | Momentum threshold as a fraction; default 0.25 |
+
+The script requires the 09:15 opening candle, exactly nine morning candles, and a positive range before a direction can qualify. Incomplete morning data produces no trading setup.
+
+## 2. Decide morning direction
+
+| Direction | Exact conditions, all required |
+| --- | --- |
+| Bullish | C > O, and C >= H - R * p |
+| Bearish | C < O, and C <= L + R * p |
+| Neither | Neither qualifying condition is met; no golden zone or signals for that day |
+
+With the default p = 0.25, bullish means the morning closes above its open and in the top 25% of the range. Bearish means it closes below its open and in the bottom 25%.
+
+This is the implemented definition of initial momentum. It does not measure minimum points moved, volume, ATR, consecutive directional candles, or the order in which the morning high and low occurred. A bullish morning starts with a buy zone; a bearish morning starts with a sell zone. Each subsequent active zone failure reverses the direction.
+
+## 3. Calculate the golden zone
+
+Default retracement inputs are 0.50 (shallow) and 0.618 (deep).
+
+| Morning direction | Zone bottom | Zone top |
+| --- | --- | --- |
+| Bullish: retracement down from H | H - R * 0.618 | H - R * 0.50 |
+| Bearish: retracement up from L | L + R * 0.50 | L + R * 0.618 |
+
+The first zone uses the entire morning high and low. Its levels freeze at 10:00. Each replacement zone uses a confirmed swing as described below. An active zone stays fixed until invalidated; it does not follow new highs or lows.
+
+Example: if H = 25,200 and L = 25,000, then R = 200. A bullish morning gives a zone of 25,076.4 to 25,100. A bearish morning gives a zone of 25,100 to 25,123.6. These illustrate the two possible directions on separate days.
+
+## 4. BUY conditions
+
+All of the following must hold on the same completed signal candle:
+
+1. There is an active buy zone, from either the bullish morning or a later reversal.
+2. The candle opens within the allowed signal session.
+3. Its price range overlaps the golden zone: `low <= zoneTop` and `high >= zoneBottom`.
+4. It is bullish: `close > open`.
+5. Its close crosses above the 9 EMA: current `close > EMA9`, and previous candle `close <= previous EMA9`.
+6. The zone has not been invalidated, and the signal candle is later than its activation candle.
+7. If the one-signal-per-day option is enabled, no earlier signal has occurred that day.
+
+The BUY label is confirmed at this candle's close.
+
+## 5. SELL conditions
+
+All of the following must hold on the same completed signal candle:
+
+1. There is an active sell zone, from either the bearish morning or a later reversal.
+2. The candle opens within the allowed signal session.
+3. Its price range overlaps the golden zone: `low <= zoneTop` and `high >= zoneBottom`.
+4. It is bearish: `close < open`.
+5. Its close crosses below the 9 EMA: current `close < EMA9`, and previous candle `close >= previous EMA9`.
+6. The zone has not been invalidated, and the signal candle is later than its activation candle.
+7. If the one-signal-per-day option is enabled, no earlier signal has occurred that day.
+
+The SELL label is confirmed at this candle's close.
+
+## Zone invalidation and direction reversal
+
+Invalidation is evaluated on completed candles during the 10:00-15:30 entry session, before checking entry conditions.
+
+| Active zone | Invalidation | Next direction and swing |
+| --- | --- | --- |
+| Buy | Close strictly below zone bottom | Switch to SELL; find a confirmed high-to-low swing |
+| Sell | Close strictly above zone top | Switch to BUY; find a confirmed low-to-high swing |
+
+A wick beyond the boundary, or a close exactly on it, does not invalidate the zone. Once broken, the old zone disappears from that candle onward and cannot produce new signals. Historical zone plots and previously confirmed signals remain visible. No signal is allowed from the breaking candle.
+
+### Finding the immediate opposite swing
+
+1. Track confirmed pivots throughout the current day's regular session, including the morning. A pivot high has two strictly lower highs on each side. A pivot low has two strictly higher lows on each side. Equal highs/lows do not qualify. All five candles must belong to the same day's regular session.
+2. A pivot becomes known only at the close of the second candle to its right (10 minutes after the pivot candle closes). Nothing is backdated to the pivot candle.
+3. After a buy zone breaks, wait for a pivot low whose candle is at or after the breaking candle. Pair it with the most recent confirmed pivot high strictly before that low. This forms the new high-to-low sell swing.
+4. After a sell zone breaks, wait for a pivot high whose candle is at or after the breaking candle. Pair it with the most recent confirmed pivot low strictly before that high. This forms the new low-to-high buy swing.
+5. The starting pivot may precede the break, but both anchors must be from the current session and define a positive price range. A candle that qualifies as both a pivot high and pivot low is ignored because its internal ordering is unknown.
+6. Apply the same Fibonacci formulas to that swing's high and low. Reject a candidate buy zone if any close from its endpoint through its confirmation is below its bottom. Reject a candidate sell zone if any such close is above its top.
+7. Use the first eligible confirmed swing. If a candidate is rejected or lacks a starting anchor, stay in the requested opposite direction and wait for the next eligible endpoint. No active zone means no signals.
+8. Activate the replacement at the confirmation candle's close. Entry eligibility begins on the following candle. Keep the replacement fixed until it breaks, then reverse again using the same rules.
+
+Example: bullish morning -> buy zone -> close below its lower edge -> wait for confirmed high-to-low swing -> sell zone -> bearish zone-touch candle crossing below EMA9 -> SELL, provided the daily signal allowance remains available.
+
+All pivot tracking, pending reversals, and active zones reset on the next IST date. Days with no qualifying morning direction never start this reversal sequence.
+
+## Exact entry behavior and limits
+
+- The EMA uses closing prices with length 9.
+- A wick touching a zone boundary counts. The candle body and closing price do not have to be inside the zone.
+- The zone touch, candle direction, and EMA crossover must happen on the same candle. A touch on an earlier candle is not remembered for a later crossover.
+- Merely closing above the EMA for a buy, or below it for a sell, is insufficient: a fresh close-to-close crossover is required.
+- There is no requirement for the candle to open on the opposite side of the EMA. The crossover compares the current and previous closes with their respective EMA values.
+- A doji (`close == open`) cannot trigger either signal.
+- The script does not require a separate departure from the zone before a touch, or a rejection close outside the zone.
+- Closing beyond the active zone's deep edge invalidates it and switches direction, as described above. There is no separate morning-high/low invalidation rule.
+- By default, only the first qualifying signal is shown each day across both directions. Zone invalidations and replacements continue after that signal, but cannot produce another entry unless this option is disabled. A reversal does not reset the daily allowance.
+- Signals require completed candles. The zone is only established after the morning closes; no future bars are used in the calculations.
+- No stop-loss, take-profit, exit, position sizing, order execution, or performance statistics are implemented. A signal marks a condition at candle close, not a guaranteed execution price.
+
+## Settings
+
+| Input | Default | Effect |
+| --- | --- | --- |
+| Morning close within top / bottom % of range | 25 | Allowed range: 1-50. Smaller values require a close nearer the directional extreme. |
+| Shallow retracement | 0.50 | Allowed range: 0-1; must be less than the deep retracement. |
+| Deep retracement | 0.618 | Allowed range: 0-1; must be greater than the shallow retracement. |
+| Only one signal per day | Enabled | Limits the day to its first qualifying BUY or SELL. |
+| Show frozen morning high / low | Enabled | Controls the morning high/low lines; does not change signals. |
+
+The 5-minute timeframe, session times, timezone, EMA length, and same-candle entry rule are fixed in the code.
+
+## Display and alerts
+
+- Orange line: 9 EMA.
+- Green/red lines: frozen morning high/low, when enabled. A complete but directionally unqualified morning can still show these lines.
+- Gold lines and yellow shading: the active golden zone, initially based on the morning and later on a confirmed opposite swing. No zone is shown while waiting for a replacement.
+- Green BUY label below the signal candle; red SELL label above it.
+- Separate alert conditions: `Nifty golden zone BUY` and `Nifty golden zone SELL`.
+
+To use:
+
+1. Open Nifty with standard 5-minute candles in TradingView.
+2. Copy the source file into Pine Editor, save it, and add it to the chart.
+3. Create separate alerts using the BUY and SELL conditions, selecting **Once Per Bar Close**.
+
+Adding the indicator does not itself create active alerts.
+
+## Validation status
+
+This description was checked against the saved script. The script has not yet been compiled inside TradingView or backtested; no profitability or execution results have been established.

@@ -1,0 +1,162 @@
+//@version=6
+indicator("Nifty Morning Golden Zone + EMA", overlay = true)
+
+// Use standard 5-minute candles. All session boundaries are India time.
+const string TZ = "Asia/Kolkata"
+float topPercent = input.float(25.0, "Morning close within top / bottom % of range", minval = 1, maxval = 50)
+float fibShallow = input.float(0.50, "Shallow retracement", minval = 0, maxval = 1, step = 0.001)
+float fibDeep = input.float(0.618, "Deep retracement", minval = 0, maxval = 1, step = 0.001)
+bool onePerDay = input.bool(true, "Only one signal per day")
+bool showRange = input.bool(true, "Show frozen morning high / low")
+
+if barstate.isfirst
+    if not timeframe.isminutes or timeframe.multiplier != 5
+        runtime.error("Use this indicator on a 5-minute chart.")
+    if not chart.is_standard
+        runtime.error("Use standard candles, rather than a synthetic chart type.")
+    if fibShallow >= fibDeep
+        runtime.error("Shallow retracement must be less than deep retracement.")
+
+int dateKey = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
+bool newDay = barstate.isfirst or dateKey != dateKey[1]
+bool morning = not na(time(timeframe.period, "0915-1000:23456", TZ))
+bool entries = not na(time(timeframe.period, "1000-1530:23456", TZ))
+bool firstMorningBar = morning and hour(time, TZ) == 9 and minute(time, TZ) == 15
+bool lastMorningBar = morning and hour(time_close, TZ) == 10 and minute(time_close, TZ) == 0
+
+var float morningHigh = na
+var float morningLow = na
+var float morningOpen = na
+var float zoneTop = na
+var float zoneBottom = na
+var int morningBars = 0
+var bool sawStart = false
+var bool frozen = false
+var bool qualified = false
+var int direction = 0
+var bool signaled = false
+var bool waitingForSwing = false
+var int brokenAt = na
+var int activatedAt = na
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastHighBar = na
+var int lastLowBar = na
+
+if newDay
+    morningHigh := na
+    morningLow := na
+    morningOpen := na
+    zoneTop := na
+    zoneBottom := na
+    morningBars := 0
+    sawStart := false
+    frozen := false
+    qualified := false
+    direction := 0
+    signaled := false
+    waitingForSwing := false
+    brokenAt := na
+    activatedAt := na
+    lastSwingHigh := na
+    lastSwingLow := na
+    lastHighBar := na
+    lastLowBar := na
+
+if morning and barstate.isconfirmed
+    if firstMorningBar
+        sawStart := true
+        morningOpen := open
+    morningHigh := na(morningHigh) ? high : math.max(morningHigh, high)
+    morningLow := na(morningLow) ? low : math.min(morningLow, low)
+    morningBars += 1
+    // Freeze after the 09:55-10:00 candle closes; exclude the 10:00 candle.
+    if lastMorningBar
+        frozen := sawStart and morningBars == 9
+        float morningRange = morningHigh - morningLow
+        bool bullishMorning = frozen and morningRange > 0 and close > morningOpen and close >= morningHigh - morningRange * topPercent / 100.0
+        bool bearishMorning = frozen and morningRange > 0 and close < morningOpen and close <= morningLow + morningRange * topPercent / 100.0
+        direction := bullishMorning ? 1 : bearishMorning ? -1 : 0
+        qualified := direction != 0
+        activatedAt := qualified ? bar_index : na
+        if direction == 1
+            zoneTop := morningHigh - morningRange * fibShallow
+            zoneBottom := morningHigh - morningRange * fibDeep
+        else if direction == -1
+            zoneTop := morningLow + morningRange * fibDeep
+            zoneBottom := morningLow + morningRange * fibShallow
+
+// Strict pivots: two strictly lower highs / higher lows on EACH side.
+// Only use windows wholly inside today's regular session.
+bool regular = morning or entries
+bool pivotWindow = bar_index >= 4 and dateKey == dateKey[4] and regular and regular[1] and regular[2] and regular[3] and regular[4]
+bool pivotHigh = pivotWindow and high[2] > high[4] and high[2] > high[3] and high[2] > high[1] and high[2] > high
+bool pivotLow = pivotWindow and low[2] < low[4] and low[2] < low[3] and low[2] < low[1] and low[2] < low
+float recentMinClose = ta.lowest(close, 3)
+float recentMaxClose = ta.highest(close, 3)
+
+if barstate.isconfirmed and entries and qualified
+    bool broken = direction == 1 ? close < zoneBottom : close > zoneTop
+    if broken
+        qualified := false
+        zoneTop := na
+        zoneBottom := na
+        direction := -direction
+        waitingForSwing := true
+        brokenAt := bar_index
+        activatedAt := na
+
+if barstate.isconfirmed and regular
+    // An outside pivot that is both a high and low has ambiguous ordering.
+    // Ignore it for both anchors and replacement zones.
+    if pivotHigh and not pivotLow
+        int endpoint = bar_index - 2
+        if entries and waitingForSwing and direction == 1 and endpoint >= brokenAt and not na(lastLowBar) and lastLowBar < endpoint and high[2] > lastSwingLow
+            float swingRange = high[2] - lastSwingLow
+            float candidateBottom = high[2] - swingRange * fibDeep
+            // Reject a zone already broken since its endpoint, including confirmation bars.
+            if recentMinClose >= candidateBottom
+                zoneTop := high[2] - swingRange * fibShallow
+                zoneBottom := candidateBottom
+                qualified := true
+                waitingForSwing := false
+                activatedAt := bar_index
+        lastSwingHigh := high[2]
+        lastHighBar := endpoint
+    if pivotLow and not pivotHigh
+        int endpoint = bar_index - 2
+        if entries and waitingForSwing and direction == -1 and endpoint >= brokenAt and not na(lastHighBar) and lastHighBar < endpoint and lastSwingHigh > low[2]
+            float swingRange = lastSwingHigh - low[2]
+            float candidateTop = low[2] + swingRange * fibDeep
+            if recentMaxClose <= candidateTop
+                zoneTop := candidateTop
+                zoneBottom := low[2] + swingRange * fibShallow
+                qualified := true
+                waitingForSwing := false
+                activatedAt := bar_index
+        lastSwingLow := low[2]
+        lastLowBar := endpoint
+
+float ema9 = ta.ema(close, 9)
+bool emaCrossUp = ta.crossover(close, ema9)
+bool emaCrossDown = ta.crossunder(close, ema9)
+// The signal candle itself must overlap the zone and match morning direction.
+bool touchesZone = qualified and low <= zoneTop and high >= zoneBottom
+bool canSignal = barstate.isconfirmed and entries and touchesZone and bar_index > activatedAt and (not onePerDay or not signaled)
+bool buySignal = canSignal and direction == 1 and close > open and emaCrossUp
+bool sellSignal = canSignal and direction == -1 and close < open and emaCrossDown
+if buySignal or sellSignal
+    signaled := true
+
+bool displayZone = qualified and (entries or lastMorningBar)
+bool displayRange = frozen and showRange and (entries or lastMorningBar)
+plot(ema9, "9 EMA", color = color.orange, linewidth = 2)
+plot(displayRange ? morningHigh : na, "Morning high", color = color.new(color.green, 40), style = plot.style_linebr)
+plot(displayRange ? morningLow : na, "Morning low", color = color.new(color.red, 40), style = plot.style_linebr)
+upperPlot = plot(displayZone ? zoneTop : na, "Golden zone upper", color = color.rgb(212, 175, 55), style = plot.style_linebr)
+lowerPlot = plot(displayZone ? zoneBottom : na, "Golden zone lower", color = color.rgb(212, 175, 55), style = plot.style_linebr)
+fill(upperPlot, lowerPlot, color = color.new(color.yellow, 85), title = "Golden zone")
+plotshape(buySignal, title = "Buy signal", style = shape.labelup, location = location.belowbar, color = color.green, text = "BUY", textcolor = color.white, size = size.small)
+plotshape(sellSignal, title = "Sell signal", style = shape.labeldown, location = location.abovebar, color = color.red, text = "SELL", textcolor = color.white, size = size.small)
+alertcondition(buySignal, title = "Nifty golden zone BUY", message = "BUY: {{ticker}} {{interval}} bullish candle touched the active golden zone and crossed above the 9 EMA. Close: {{close}}")
+alertcondition(sellSignal, title = "Nifty golden zone SELL", message = "SELL: {{ticker}} {{interval}} bearish candle touched the active golden zone and crossed below the 9 EMA. Close: {{close}}")
