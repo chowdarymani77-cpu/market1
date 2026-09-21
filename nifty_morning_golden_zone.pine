@@ -42,6 +42,7 @@ var float lastSwingHigh = na
 var float lastSwingLow = na
 var int lastHighBar = na
 var int lastLowBar = na
+var int touchBar = na
 
 if newDay
     morningHigh := na
@@ -62,6 +63,7 @@ if newDay
     lastSwingLow := na
     lastHighBar := na
     lastLowBar := na
+    touchBar := na
 
 if morning and barstate.isconfirmed
     if firstMorningBar
@@ -140,13 +142,23 @@ if barstate.isconfirmed and regular
 float ema9 = ta.ema(close, 9)
 bool emaCrossUp = ta.crossover(close, ema9)
 bool emaCrossDown = ta.crossunder(close, ema9)
-// The signal candle itself must overlap the zone and match morning direction.
+// A touch arms exactly the NEXT three candles. Retouches do not extend it.
 bool touchesZone = qualified and low <= zoneTop and high >= zoneBottom
-bool canSignal = barstate.isconfirmed and entries and touchesZone and bar_index > activatedAt and (not onePerDay or not signaled)
+if barstate.isconfirmed
+    if not entries or not qualified or bar_index <= activatedAt
+        touchBar := na
+    else
+        if not na(touchBar) and bar_index - touchBar > 3
+            touchBar := na
+        if na(touchBar) and touchesZone
+            touchBar := bar_index
+bool withinTouchWindow = not na(touchBar) and bar_index > touchBar and bar_index - touchBar <= 3
+bool canSignal = barstate.isconfirmed and entries and qualified and withinTouchWindow and bar_index > activatedAt and (not onePerDay or not signaled)
 bool buySignal = canSignal and direction == 1 and close > open and emaCrossUp
 bool sellSignal = canSignal and direction == -1 and close < open and emaCrossDown
 if buySignal or sellSignal
     signaled := true
+    touchBar := na
 
 bool displayZone = qualified and (entries or lastMorningBar)
 bool displayRange = frozen and showRange and (entries or lastMorningBar)
@@ -158,5 +170,5 @@ lowerPlot = plot(displayZone ? zoneBottom : na, "Golden zone lower", color = col
 fill(upperPlot, lowerPlot, color = color.new(color.yellow, 85), title = "Golden zone")
 plotshape(buySignal, title = "Buy signal", style = shape.labelup, location = location.belowbar, color = color.green, text = "BUY", textcolor = color.white, size = size.small)
 plotshape(sellSignal, title = "Sell signal", style = shape.labeldown, location = location.abovebar, color = color.red, text = "SELL", textcolor = color.white, size = size.small)
-alertcondition(buySignal, title = "Nifty golden zone BUY", message = "BUY: {{ticker}} {{interval}} bullish candle touched the active golden zone and crossed above the 9 EMA. Close: {{close}}")
-alertcondition(sellSignal, title = "Nifty golden zone SELL", message = "SELL: {{ticker}} {{interval}} bearish candle touched the active golden zone and crossed below the 9 EMA. Close: {{close}}")
+alertcondition(buySignal, title = "Nifty golden zone BUY", message = "BUY: {{ticker}} {{interval}} bullish candle crossed above the 9 EMA within 3 candles after a golden-zone touch. Close: {{close}}")
+alertcondition(sellSignal, title = "Nifty golden zone SELL", message = "SELL: {{ticker}} {{interval}} bearish candle crossed below the 9 EMA within 3 candles after a golden-zone touch. Close: {{close}}")

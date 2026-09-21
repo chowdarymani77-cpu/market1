@@ -2,7 +2,7 @@
 
 Source: [nifty_morning_golden_zone.pine](nifty_morning_golden_zone.pine)
 
-This Pine Script v6 indicator identifies morning direction, fixes a Fibonacci pullback zone, and marks BUY or SELL signals when a candle touches that zone and crosses the 9 EMA. It draws signals and exposes alert conditions; it does not place orders or implement a backtest strategy.
+This Pine Script v6 indicator identifies morning direction, fixes a Fibonacci pullback zone, and marks BUY or SELL signals when a directional candle crosses the 9 EMA within the three candles after a zone touch. It draws signals and exposes alert conditions; it does not place orders or implement a backtest strategy.
 
 ## Chart and time requirements
 
@@ -11,7 +11,7 @@ This Pine Script v6 indicator identifies morning direction, fixes a Fibonacci pu
 - Sessions run Monday through Friday, when chart data exists.
 - Morning observation: 09:15 inclusive to 10:00 exclusive. This includes nine candles opening at 09:15, 09:20, ..., 09:55.
 - The morning range and initial direction are established when the 09:55 candle closes at 10:00. The candle opening at 10:00 is excluded from the morning calculation. Later zone failures can reverse the active direction.
-- Signal candles must open from 10:00 inclusive to 15:30 exclusive. Thus the earliest possible signal confirms at 10:05; the last possible signal confirms at 15:30 on the 15:25 candle.
+- Touch and signal candles must open from 10:00 inclusive to 15:30 exclusive. The earliest touch confirms at 10:05, and the earliest possible signal confirms at 10:10. The last possible signal confirms at 15:30 on the 15:25 candle.
 - Morning values and the daily signal allowance reset on each new IST calendar date. The EMA is continuous across days and does not reset.
 
 ## 1. Measure the morning
@@ -60,7 +60,7 @@ All of the following must hold on the same completed signal candle:
 
 1. There is an active buy zone, from either the bullish morning or a later reversal.
 2. The candle opens within the allowed signal session.
-3. Its price range overlaps the golden zone: `low <= zoneTop` and `high >= zoneBottom`.
+3. It is candle 1, 2, or 3 after an eligible touch of the active zone. The entry candle itself does not need to touch the zone.
 4. It is bullish: `close > open`.
 5. Its close crosses above the 9 EMA: current `close > EMA9`, and previous candle `close <= previous EMA9`.
 6. The zone has not been invalidated, and the signal candle is later than its activation candle.
@@ -74,7 +74,7 @@ All of the following must hold on the same completed signal candle:
 
 1. There is an active sell zone, from either the bearish morning or a later reversal.
 2. The candle opens within the allowed signal session.
-3. Its price range overlaps the golden zone: `low <= zoneTop` and `high >= zoneBottom`.
+3. It is candle 1, 2, or 3 after an eligible touch of the active zone. The entry candle itself does not need to touch the zone.
 4. It is bearish: `close < open`.
 5. Its close crosses below the 9 EMA: current `close < EMA9`, and previous candle `close >= previous EMA9`.
 6. The zone has not been invalidated, and the signal candle is later than its activation candle.
@@ -102,17 +102,20 @@ A wick beyond the boundary, or a close exactly on it, does not invalidate the zo
 5. The starting pivot may precede the break, but both anchors must be from the current session and define a positive price range. A candle that qualifies as both a pivot high and pivot low is ignored because its internal ordering is unknown.
 6. Apply the same Fibonacci formulas to that swing's high and low. Reject a candidate buy zone if any close from its endpoint through its confirmation is below its bottom. Reject a candidate sell zone if any such close is above its top.
 7. Use the first eligible confirmed swing. If a candidate is rejected or lacks a starting anchor, stay in the requested opposite direction and wait for the next eligible endpoint. No active zone means no signals.
-8. Activate the replacement at the confirmation candle's close. Entry eligibility begins on the following candle. Keep the replacement fixed until it breaks, then reverse again using the same rules.
+8. Activate the replacement at the confirmation candle's close. A new touch can arm a window beginning on the following candle; the earliest entry is one candle after that touch. Keep the replacement fixed until it breaks, then reverse again using the same rules. Touch windows never carry over between zones.
 
-Example: bullish morning -> buy zone -> close below its lower edge -> wait for confirmed high-to-low swing -> sell zone -> bearish zone-touch candle crossing below EMA9 -> SELL, provided the daily signal allowance remains available.
+Example: bullish morning -> buy zone -> close below its lower edge -> wait for confirmed high-to-low swing -> sell zone -> zone touch -> bearish candle crossing below EMA9 within the next three candles -> SELL, provided the daily signal allowance remains available.
 
 All pivot tracking, pending reversals, and active zones reset on the next IST date. Days with no qualifying morning direction never start this reversal sequence.
 
 ## Exact entry behavior and limits
 
 - The EMA uses closing prices with length 9.
-- A wick touching a zone boundary counts. The candle body and closing price do not have to be inside the zone.
-- The zone touch, candle direction, and EMA crossover must happen on the same candle. A touch on an earlier candle is not remembered for a later crossover.
+- A touch means `low <= zoneTop` and `high >= zoneBottom`. A wick touching a boundary counts; the touch candle can be bullish, bearish, or a doji. A close invalidating the zone takes priority and cannot arm a window.
+- If candle T touches the zone, only T+1, T+2, and T+3 can signal from that touch. T itself cannot signal from its own touch; T+4 is too late. For example, a touch on the 10:15 candle permits signals on the 10:20, 10:25, and 10:30 candles at their closes.
+- Retouches during an open window do not restart or extend its three-candle limit. After expiry, a new touch can arm a fresh window. A touch on T+4 may arm a new window but cannot itself trigger an entry from that new touch.
+- A signal consumes its window. Zone invalidation, replacement, leaving the entry session, and a new day clear any pending touch. A new signal needs a new touch, and the daily limit still applies.
+- The entry candle need not overlap the zone. It must have the correct bullish/bearish body and a fresh EMA crossover on that same entry candle.
 - Merely closing above the EMA for a buy, or below it for a sell, is insufficient: a fresh close-to-close crossover is required.
 - There is no requirement for the candle to open on the opposite side of the EMA. The crossover compares the current and previous closes with their respective EMA values.
 - A doji (`close == open`) cannot trigger either signal.
@@ -132,7 +135,7 @@ All pivot tracking, pending reversals, and active zones reset on the next IST da
 | Only one signal per day | Enabled | Limits the day to its first qualifying BUY or SELL. |
 | Show frozen morning high / low | Enabled | Controls the morning high/low lines; does not change signals. |
 
-The 5-minute timeframe, session times, timezone, EMA length, and same-candle entry rule are fixed in the code.
+The 5-minute timeframe, session times, timezone, EMA length, and three-candle post-touch window are fixed in the code.
 
 ## Display and alerts
 
