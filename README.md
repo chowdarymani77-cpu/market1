@@ -1,5 +1,7 @@
 # Nifty Golden Zone + 9 EMA
 
+For the separate triple-top / triple-bottom zone indicator, see [TRIPLE_PATTERNS.md](TRIPLE_PATTERNS.md) and [triple_top_bottom.pine](triple_top_bottom.pine).
+
 Source: [nifty_morning_golden_zone.pine](nifty_morning_golden_zone.pine)
 
 Pine Script v6 indicator for standard Nifty 5-minute candles. It draws two session-based setups and provides BUY/SELL alerts. It does not place orders or implement stops, targets, exits, position sizing, or a backtest.
