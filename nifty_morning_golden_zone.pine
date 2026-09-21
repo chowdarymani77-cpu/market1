@@ -142,7 +142,7 @@ if barstate.isconfirmed and regular
 float ema9 = ta.ema(close, 9)
 bool emaCrossUp = ta.crossover(close, ema9)
 bool emaCrossDown = ta.crossunder(close, ema9)
-// A touch arms exactly the NEXT three candles. Retouches do not extend it.
+// Evaluate entry from the previous touch before a retouch restarts the window.
 bool touchesZone = qualified and low <= zoneTop and high >= zoneBottom
 if barstate.isconfirmed
     if not entries or not qualified or bar_index <= activatedAt
@@ -150,8 +150,6 @@ if barstate.isconfirmed
     else
         if not na(touchBar) and bar_index - touchBar > 3
             touchBar := na
-        if na(touchBar) and touchesZone
-            touchBar := bar_index
 bool withinTouchWindow = not na(touchBar) and bar_index > touchBar and bar_index - touchBar <= 3
 bool canSignal = barstate.isconfirmed and entries and qualified and withinTouchWindow and bar_index > activatedAt and (not onePerDay or not signaled)
 bool buySignal = canSignal and direction == 1 and close > open and emaCrossUp
@@ -159,6 +157,9 @@ bool sellSignal = canSignal and direction == -1 and close < open and emaCrossDow
 if buySignal or sellSignal
     signaled := true
     touchBar := na
+else if barstate.isconfirmed and entries and qualified and bar_index > activatedAt and touchesZone
+    // Every touch gives the NEXT three candles a fresh opportunity.
+    touchBar := bar_index
 
 bool displayZone = qualified and (entries or lastMorningBar)
 bool displayRange = frozen and showRange and (entries or lastMorningBar)

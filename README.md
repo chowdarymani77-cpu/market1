@@ -113,7 +113,8 @@ All pivot tracking, pending reversals, and active zones reset on the next IST da
 - The EMA uses closing prices with length 9.
 - A touch means `low <= zoneTop` and `high >= zoneBottom`. A wick touching a boundary counts; the touch candle can be bullish, bearish, or a doji. A close invalidating the zone takes priority and cannot arm a window.
 - If candle T touches the zone, only T+1, T+2, and T+3 can signal from that touch. T itself cannot signal from its own touch; T+4 is too late. For example, a touch on the 10:15 candle permits signals on the 10:20, 10:25, and 10:30 candles at their closes.
-- Retouches during an open window do not restart or extend its three-candle limit. After expiry, a new touch can arm a fresh window. A touch on T+4 may arm a new window but cannot itself trigger an entry from that new touch.
+- Every eligible touch, including a retouch during an open window, restarts the countdown for the next three candles. Consecutive candles overlapping the zone each count as a new touch. For example, a touch at T and a retouch at T+3 allow entry at T+4, T+5, or T+6 from the retouch.
+- Entry is checked against the previous touch before recording the current candle's touch. Thus a retouch candle can itself signal if it is within the previous touch's three-candle window and meets the entry conditions. A first touch, or a retouch after the previous window expired, cannot signal from its own touch.
 - A signal consumes its window. Zone invalidation, replacement, leaving the entry session, and a new day clear any pending touch. A new signal needs a new touch, and the daily limit still applies.
 - The entry candle need not overlap the zone. It must have the correct bullish/bearish body and a fresh EMA crossover on that same entry candle.
 - Merely closing above the EMA for a buy, or below it for a sell, is insufficient: a fresh close-to-close crossover is required.
