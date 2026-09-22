@@ -8,44 +8,40 @@ float fibShallow = input.float(0.50, "Shallow retracement", minval = 0, maxval =
 float fibDeep = input.float(0.618, "Deep retracement", minval = 0, maxval = 1, step = 0.001)
 bool onePerDay = input.bool(true, "Only one signal per day")
 bool showRange = input.bool(true, "Show frozen morning high / low")
-float matchTolerance = input.float(2.0, "Morning anchor match tolerance (points)", minval = 0, step = 0.05)
-
-// Called at 09:55: offsets 0..6 are 09:50..09:20; opening candle is offset 7.
-commonAnchor(bool bullish, float openingAnchor, float tolerance) =>
-    float greenWick = na
-    float greenBody = na
-    float redWick = na
-    float redBody = na
-    // Select the extreme candle of EACH color before checking any matches.
-    // Iterate newest first; equal extremes retain the most recent candle.
-    for i = 0 to 6
-        float tip = bullish ? high[i] : low[i]
-        float edge = bullish ? math.max(open[i], close[i]) : math.min(open[i], close[i])
-        if close[i] > open[i]
-            if na(greenWick) or (bullish ? tip > greenWick : tip < greenWick)
-                greenWick := tip
-                greenBody := edge
-        else if close[i] < open[i]
-            if na(redWick) or (bullish ? tip > redWick : tip < redWick)
-                redWick := tip
-                redBody := edge
+// At 09:55 offsets 0..6 cover 09:50..09:20, excluding the opening anchor.
+commonAnchor(bool bullish, float openingAnchor) =>
     float best = na
     int bestRank = 4
-    if not na(greenWick) and not na(redWick)
-        bool greenHasWick = bullish ? greenWick > greenBody : greenWick < greenBody
-        bool redHasWick = bullish ? redWick > redBody : redWick < redBody
-        for kind = 0 to 3
-            int rank = kind == 0 ? 1 : kind == 3 ? 3 : 2
-            float a = kind == 0 or kind == 1 ? greenWick : greenBody
-            float b = kind == 0 or kind == 2 ? redWick : redBody
-            bool eligible = (kind != 0 and kind != 1 or greenHasWick) and (kind != 0 and kind != 2 or redHasWick)
-            float level = (a + b) / 2.0
-            bool positiveRange = bullish ? level > openingAnchor : level < openingAnchor
-            if eligible and math.abs(a - b) <= tolerance and positiveRange
-                bool moreExtreme = na(best) or (bullish ? level > best : level < best)
-                if rank < bestRank or (rank == bestRank and moreExtreme)
-                    best := level
-                    bestRank := rank
+    for i = 0 to 5
+        for j = i + 1 to 6
+            bool opposite = (close[i] > open[i] and close[j] < open[j]) or (close[i] < open[i] and close[j] > open[j])
+            if opposite
+                float bodyLowI = math.min(open[i], close[i])
+                float bodyHighI = math.max(open[i], close[i])
+                float bodyLowJ = math.min(open[j], close[j])
+                float bodyHighJ = math.max(open[j], close[j])
+                float wickLowI = bullish ? bodyHighI : low[i]
+                float wickHighI = bullish ? high[i] : bodyLowI
+                float wickLowJ = bullish ? bodyHighJ : low[j]
+                float wickHighJ = bullish ? high[j] : bodyLowJ
+                for kind = 0 to 3
+                    bool useWickI = kind == 0 or kind == 1
+                    bool useWickJ = kind == 0 or kind == 2
+                    int rank = kind == 0 ? 1 : kind == 3 ? 3 : 2
+                    float lowI = useWickI ? wickLowI : bodyLowI
+                    float highI = useWickI ? wickHighI : bodyHighI
+                    float lowJ = useWickJ ? wickLowJ : bodyLowJ
+                    float highJ = useWickJ ? wickHighJ : bodyHighJ
+                    bool eligible = (not useWickI or wickHighI > wickLowI) and (not useWickJ or wickHighJ > wickLowJ)
+                    float overlapLow = math.max(lowI, lowJ)
+                    float overlapHigh = math.min(highI, highJ)
+                    float level = bullish ? overlapHigh : overlapLow
+                    bool positiveRange = bullish ? level > openingAnchor : level < openingAnchor
+                    if eligible and overlapLow <= overlapHigh and positiveRange
+                        bool moreExtreme = na(best) or (bullish ? level > best : level < best)
+                        if moreExtreme or (level == best and rank < bestRank)
+                            best := level
+                            bestRank := rank
     best
 
 if barstate.isfirst
@@ -130,10 +126,10 @@ if morning and barstate.isconfirmed
         direction := bullishMorning ? 1 : bearishMorning ? -1 : 0
         if direction == 1
             initialLow := openingLow
-            initialHigh := commonAnchor(true, openingLow, matchTolerance)
+            initialHigh := commonAnchor(true, openingLow)
         else if direction == -1
             initialHigh := openingHigh
-            initialLow := commonAnchor(false, openingHigh, matchTolerance)
+            initialLow := commonAnchor(false, openingHigh)
         float anchorRange = initialHigh - initialLow
         qualified := direction != 0 and not na(anchorRange) and anchorRange > 0
         activatedAt := qualified ? bar_index : na
