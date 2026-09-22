@@ -62,11 +62,12 @@ The initial Fibonacci anchors now differ from the full morning H/L used for the 
 - SELL: FH is the 09:15 candle's high; FL is a matched lower level from a green/red pair among the remaining 09:20-09:50 candles.
 - The green/red candles need not be adjacent. Green means close > open, red means close < open; dojis are excluded. The opening candle supplies only the opening anchor, not one of the matching pair.
 - A match is an absolute price difference of at most **2 points**, inclusive, adjustable in settings. It compares level prices, not overlap between wick segments.
-- Search all eligible pairs using strict precedence: **wick-tip to wick-tip**, then **body-edge to wick-tip** (either candle can supply the body), then **body-edge to body-edge**.
+- First select exactly two extreme candles: for BUY, the green candle with the highest high and the red candle with the highest high; for SELL, the green candle with the lowest low and the red candle with the lowest low. Search the entire 09:20-09:50 window, regardless of adjacency. Equal extremes select the most recent candle of that color.
+- Check only that selected pair using strict precedence: **wick-tip to wick-tip**, then **body-edge to wick-tip** (either candle can supply the body), then **body-edge to body-edge**. Do not substitute a less extreme candle to obtain a matching pair.
 - For BUY, compare upper wick tips (highs) and upper body edges (max of open/close). For SELL, compare lower wick tips (lows) and lower body edges (min of open/close).
 - A wick must actually protrude beyond its body edge to count as a wick; a zero-length wick can only supply a body edge. The opening anchor always uses its high/low even if its wick has zero length.
-- Use the midpoint of the two matching prices. Within the first available priority category, choose the highest midpoint for BUY or lowest midpoint for SELL. This is a global priority: a body match cannot override a valid wick match merely because it is more extreme.
-- Candidates must produce a positive range against the opening anchor. If no eligible match exists, no initial zone or subsequent reversal sequence is started that day. There is no fallback to the full morning extreme.
+- Use the midpoint of the two matching prices. If both body/wick combinations qualify, choose the higher midpoint for BUY or lower midpoint for SELL. Wick/body precedence applies only after the two extreme candles have been selected, not across arbitrary pairs elsewhere in the range.
+- Candidates must produce a positive range against the opening anchor. If either color is absent or the selected extreme pair has no eligible match, no initial zone or subsequent reversal sequence is started that day. There is no fallback to other candle pairs or to the full morning extreme.
 - The original momentum filter still uses all eight candles' highest high and lowest low. This change affects Fibonacci anchors only.
 
 Initial levels freeze at 09:55. Replacement zones still use confirmed swing high/low wicks with the existing rules below; the green/red matching rule does not apply to them. Active zones stay fixed until invalidated.
