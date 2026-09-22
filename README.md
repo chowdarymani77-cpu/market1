@@ -1,8 +1,8 @@
 # Nifty Morning Golden Zone + EMA
 
-This repository now contains only the after-first-hour Fibonacci setup. The previous-day early setup and triple-top/bottom detector have been removed from the current version; earlier versions remain in Git history.
+This repository now contains only the morning Fibonacci setup active from 09:55 IST. The previous-day early setup and triple-top/bottom detector have been removed from the current version; earlier versions remain in Git history.
 
-Trading starts with the candle opening at **10:15 AM IST**, while the measurement range remains **09:15-10:00**. Initial zone levels are calculated at 10:00, but zone display, touches, and invalidation checks begin at 10:15. The intervening 10:00-10:15 candles do not arm or invalidate the setup. Existing opposite-swing replacement rules remain enabled.
+The setup starts with the candle opening at **09:55 AM IST**. The measurement range is **09:15-09:55**, using the eight candles opening from 09:15 through 09:50. The range freezes at 09:55, before the first eligible touch candle opens. Existing opposite-swing replacement rules remain enabled.
 
 Source: [nifty_morning_golden_zone.pine](nifty_morning_golden_zone.pine)
 
@@ -13,9 +13,9 @@ This Pine Script v6 indicator identifies morning direction, fixes a Fibonacci pu
 - Intended chart: Nifty, standard 5-minute candles. The script rejects other timeframes and synthetic chart types. It does not restrict the ticker, so select Nifty yourself.
 - All session calculations use `Asia/Kolkata` (IST), independently of the chart display timezone.
 - Sessions run Monday through Friday, when chart data exists.
-- Morning observation: 09:15 inclusive to 10:00 exclusive. This includes nine candles opening at 09:15, 09:20, ..., 09:55.
-- The morning range and initial direction are established when the 09:55 candle closes at 10:00. The candle opening at 10:00 is excluded from the morning calculation. Later zone failures can reverse the active direction.
-- Touch and signal candles must open from 10:15 inclusive to 15:30 exclusive. The earliest touch confirms at 10:20, and the earliest possible signal confirms at 10:25. The last possible signal confirms at 15:30 on the 15:25 candle.
+- Morning observation: 09:15 inclusive to 09:55 exclusive. This includes eight candles opening at 09:15, 09:20, ..., 09:50.
+- The morning range and initial direction are established when the 09:50 candle closes at 09:55. The candle opening at 09:55 is excluded from the morning calculation. Later zone failures can reverse the active direction.
+- Touch and signal candles must open from 09:55 inclusive to 15:30 exclusive. The earliest touch confirms at 10:00, and the earliest possible signal confirms at 10:05. The last possible signal confirms at 15:30 on the 15:25 candle.
 - Morning values and the daily signal allowance reset on each new IST calendar date. The EMA is continuous across days and does not reset.
 
 ## 1. Measure the morning
@@ -25,13 +25,13 @@ Define:
 | Symbol | Meaning |
 | --- | --- |
 | O | Open of the 09:15 candle |
-| H | Highest high of the nine morning candles |
-| L | Lowest low of the nine morning candles |
-| C | Close of the 09:55 candle, known at 10:00 |
+| H | Highest high of the eight morning candles |
+| L | Lowest low of the eight morning candles |
+| C | Close of the 09:50 candle, known at 09:55 |
 | R | Morning range: H - L |
 | p | Momentum threshold as a fraction; default 0.25 |
 
-The script requires the 09:15 opening candle, exactly nine morning candles, and a positive range before a direction can qualify. Incomplete morning data produces no trading setup.
+The script requires the 09:15 opening candle, exactly eight morning candles, and a positive range before a direction can qualify. Incomplete morning data produces no trading setup.
 
 ## 2. Decide morning direction
 
@@ -54,7 +54,7 @@ Default retracement inputs are 0.50 (shallow) and 0.618 (deep).
 | Bullish: retracement down from H | H - R * 0.618 | H - R * 0.50 |
 | Bearish: retracement up from L | L + R * 0.50 | L + R * 0.618 |
 
-The first zone uses the entire morning high and low. Its levels freeze at 10:00. Each replacement zone uses a confirmed swing as described below. An active zone stays fixed until invalidated; it does not follow new highs or lows.
+The first zone uses the entire morning high and low. Its levels freeze at 09:55. Each replacement zone uses a confirmed swing as described below. An active zone stays fixed until invalidated; it does not follow new highs or lows.
 
 Example: if H = 25,200 and L = 25,000, then R = 200. A bullish morning gives a zone of 25,076.4 to 25,100. A bearish morning gives a zone of 25,100 to 25,123.6. These illustrate the two possible directions on separate days.
 
@@ -88,7 +88,7 @@ The SELL label is confirmed at this candle's close.
 
 ## Zone invalidation and direction reversal
 
-Invalidation is evaluated on completed candles during the 10:15-15:30 entry session, before checking entry conditions.
+Invalidation is evaluated on completed candles during the 09:55-15:30 entry session, before checking entry conditions.
 
 | Active zone | Invalidation | Next direction and swing |
 | --- | --- | --- |

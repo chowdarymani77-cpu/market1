@@ -19,10 +19,10 @@ if barstate.isfirst
 
 int dateKey = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
 bool newDay = barstate.isfirst or dateKey != dateKey[1]
-bool morning = not na(time(timeframe.period, "0915-1000:23456", TZ))
-bool entries = not na(time(timeframe.period, "1015-1530:23456", TZ))
+bool morning = not na(time(timeframe.period, "0915-0955:23456", TZ))
+bool entries = not na(time(timeframe.period, "0955-1530:23456", TZ))
 bool firstMorningBar = morning and hour(time, TZ) == 9 and minute(time, TZ) == 15
-bool lastMorningBar = morning and hour(time_close, TZ) == 10 and minute(time_close, TZ) == 0
+bool lastMorningBar = morning and hour(time_close, TZ) == 9 and minute(time_close, TZ) == 55
 
 var float morningHigh = na
 var float morningLow = na
@@ -72,9 +72,9 @@ if morning and barstate.isconfirmed
     morningHigh := na(morningHigh) ? high : math.max(morningHigh, high)
     morningLow := na(morningLow) ? low : math.min(morningLow, low)
     morningBars += 1
-    // Freeze after the 09:55-10:00 candle closes; exclude the 10:00 candle.
+    // Freeze after the 09:50-09:55 candle closes; exclude the 09:55 candle.
     if lastMorningBar
-        frozen := sawStart and morningBars == 9
+        frozen := sawStart and morningBars == 8
         float morningRange = morningHigh - morningLow
         bool bullishMorning = frozen and morningRange > 0 and close > morningOpen and close >= morningHigh - morningRange * topPercent / 100.0
         bool bearishMorning = frozen and morningRange > 0 and close < morningOpen and close <= morningLow + morningRange * topPercent / 100.0
