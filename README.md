@@ -49,14 +49,29 @@ This is the implemented definition of initial momentum. It does not measure mini
 
 Default retracement inputs are 0.50 (shallow) and 0.618 (deep).
 
+The initial Fibonacci anchors now differ from the full morning H/L used for the momentum filter. Let FH/FL be the selected Fibonacci high/low and FR = FH - FL.
+
 | Morning direction | Zone bottom | Zone top |
 | --- | --- | --- |
-| Bullish: retracement down from H | H - R * 0.618 | H - R * 0.50 |
-| Bearish: retracement up from L | L + R * 0.50 | L + R * 0.618 |
+| Bullish: retracement down from FH | FH - FR * 0.618 | FH - FR * 0.50 |
+| Bearish: retracement up from FL | FL + FR * 0.50 | FL + FR * 0.618 |
 
-The first zone uses the entire morning high and low. Its levels freeze at 09:55. Each replacement zone uses a confirmed swing as described below. An active zone stays fixed until invalidated; it does not follow new highs or lows.
+### Initial morning anchor selection
 
-Example: if H = 25,200 and L = 25,000, then R = 200. A bullish morning gives a zone of 25,076.4 to 25,100. A bearish morning gives a zone of 25,100 to 25,123.6. These illustrate the two possible directions on separate days.
+- BUY: FL is the 09:15 candle's low; FH is a matched upper level from a green/red pair among the remaining 09:20-09:50 candles.
+- SELL: FH is the 09:15 candle's high; FL is a matched lower level from a green/red pair among the remaining 09:20-09:50 candles.
+- The green/red candles need not be adjacent. Green means close > open, red means close < open; dojis are excluded. The opening candle supplies only the opening anchor, not one of the matching pair.
+- A match is an absolute price difference of at most **2 points**, inclusive, adjustable in settings. It compares level prices, not overlap between wick segments.
+- Search all eligible pairs using strict precedence: **wick-tip to wick-tip**, then **body-edge to wick-tip** (either candle can supply the body), then **body-edge to body-edge**.
+- For BUY, compare upper wick tips (highs) and upper body edges (max of open/close). For SELL, compare lower wick tips (lows) and lower body edges (min of open/close).
+- A wick must actually protrude beyond its body edge to count as a wick; a zero-length wick can only supply a body edge. The opening anchor always uses its high/low even if its wick has zero length.
+- Use the midpoint of the two matching prices. Within the first available priority category, choose the highest midpoint for BUY or lowest midpoint for SELL. This is a global priority: a body match cannot override a valid wick match merely because it is more extreme.
+- Candidates must produce a positive range against the opening anchor. If no eligible match exists, no initial zone or subsequent reversal sequence is started that day. There is no fallback to the full morning extreme.
+- The original momentum filter still uses all eight candles' highest high and lowest low. This change affects Fibonacci anchors only.
+
+Initial levels freeze at 09:55. Replacement zones still use confirmed swing high/low wicks with the existing rules below; the green/red matching rule does not apply to them. Active zones stay fixed until invalidated.
+
+Example: if the selected FH = 25,200 and FL = 25,000, then FR = 200. A bullish setup gives a zone of 25,076.4 to 25,100. A bearish setup gives a zone of 25,100 to 25,123.6. These illustrate two possible directions on separate days.
 
 ## 4. BUY conditions
 
@@ -135,6 +150,7 @@ All pivot tracking, pending reversals, and active zones reset on the next IST da
 | Input | Default | Effect |
 | --- | --- | --- |
 | Morning close within top / bottom % of range | 25 | Allowed range: 1-50. Smaller values require a close nearer the directional extreme. |
+| Morning anchor match tolerance (points) | 2 | Inclusive maximum difference between the green/red pair's selected levels; applies only to initial anchors. |
 | Shallow retracement | 0.50 | Allowed range: 0-1; must be less than the deep retracement. |
 | Deep retracement | 0.618 | Allowed range: 0-1; must be greater than the shallow retracement. |
 | Only one signal per day | Enabled | Limits the day to its first qualifying BUY or SELL. |
@@ -146,6 +162,7 @@ The 5-minute timeframe, session times, timezone, EMA length, and three-candle po
 
 - Orange line: 9 EMA.
 - Green/red lines: frozen morning high/low, when enabled. A complete but directionally unqualified morning can still show these lines.
+- Blue lines: selected initial Fibonacci anchors, controlled by the same high/low display option. They remain the initial anchors even if a later replacement zone forms.
 - Gold lines and yellow shading: the active golden zone, initially based on the morning and later on a confirmed opposite swing. No zone is shown while waiting for a replacement.
 - Green BUY label below the signal candle; red SELL label above it.
 - Separate alert conditions: `Nifty golden zone BUY` and `Nifty golden zone SELL`.

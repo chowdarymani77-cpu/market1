@@ -8,6 +8,35 @@ float fibShallow = input.float(0.50, "Shallow retracement", minval = 0, maxval =
 float fibDeep = input.float(0.618, "Deep retracement", minval = 0, maxval = 1, step = 0.001)
 bool onePerDay = input.bool(true, "Only one signal per day")
 bool showRange = input.bool(true, "Show frozen morning high / low")
+float matchTolerance = input.float(2.0, "Morning anchor match tolerance (points)", minval = 0, step = 0.05)
+
+// Called at 09:55: offsets 0..6 are 09:50..09:20; opening candle is offset 7.
+commonAnchor(bool bullish, float openingAnchor, float tolerance) =>
+    float best = na
+    int bestRank = 4
+    for i = 0 to 5
+        for j = i + 1 to 6
+            bool opposite = (close[i] > open[i] and close[j] < open[j]) or (close[i] < open[i] and close[j] > open[j])
+            if opposite
+                float bodyI = bullish ? math.max(open[i], close[i]) : math.min(open[i], close[i])
+                float bodyJ = bullish ? math.max(open[j], close[j]) : math.min(open[j], close[j])
+                float wickI = bullish ? high[i] : low[i]
+                float wickJ = bullish ? high[j] : low[j]
+                bool hasWickI = bullish ? wickI > bodyI : wickI < bodyI
+                bool hasWickJ = bullish ? wickJ > bodyJ : wickJ < bodyJ
+                for kind = 0 to 3
+                    int rank = kind == 0 ? 1 : kind == 3 ? 3 : 2
+                    float a = kind == 0 or kind == 1 ? wickI : bodyI
+                    float b = kind == 0 or kind == 2 ? wickJ : bodyJ
+                    bool eligible = (kind != 0 and kind != 1 or hasWickI) and (kind != 0 and kind != 2 or hasWickJ)
+                    float level = (a + b) / 2.0
+                    bool positiveRange = bullish ? level > openingAnchor : level < openingAnchor
+                    if eligible and math.abs(a - b) <= tolerance and positiveRange
+                        bool moreExtreme = na(best) or (bullish ? level > best : level < best)
+                        if rank < bestRank or (rank == bestRank and moreExtreme)
+                            best := level
+                            bestRank := rank
+    best
 
 if barstate.isfirst
     if not timeframe.isminutes or timeframe.multiplier != 5
@@ -27,6 +56,10 @@ bool lastMorningBar = morning and hour(time_close, TZ) == 9 and minute(time_clos
 var float morningHigh = na
 var float morningLow = na
 var float morningOpen = na
+var float openingHigh = na
+var float openingLow = na
+var float initialHigh = na
+var float initialLow = na
 var float zoneTop = na
 var float zoneBottom = na
 var int morningBars = 0
@@ -48,6 +81,10 @@ if newDay
     morningHigh := na
     morningLow := na
     morningOpen := na
+    openingHigh := na
+    openingLow := na
+    initialHigh := na
+    initialLow := na
     zoneTop := na
     zoneBottom := na
     morningBars := 0
@@ -69,6 +106,8 @@ if morning and barstate.isconfirmed
     if firstMorningBar
         sawStart := true
         morningOpen := open
+        openingHigh := high
+        openingLow := low
     morningHigh := na(morningHigh) ? high : math.max(morningHigh, high)
     morningLow := na(morningLow) ? low : math.min(morningLow, low)
     morningBars += 1
@@ -79,14 +118,21 @@ if morning and barstate.isconfirmed
         bool bullishMorning = frozen and morningRange > 0 and close > morningOpen and close >= morningHigh - morningRange * topPercent / 100.0
         bool bearishMorning = frozen and morningRange > 0 and close < morningOpen and close <= morningLow + morningRange * topPercent / 100.0
         direction := bullishMorning ? 1 : bearishMorning ? -1 : 0
-        qualified := direction != 0
-        activatedAt := qualified ? bar_index : na
         if direction == 1
-            zoneTop := morningHigh - morningRange * fibShallow
-            zoneBottom := morningHigh - morningRange * fibDeep
+            initialLow := openingLow
+            initialHigh := commonAnchor(true, openingLow, matchTolerance)
         else if direction == -1
-            zoneTop := morningLow + morningRange * fibDeep
-            zoneBottom := morningLow + morningRange * fibShallow
+            initialHigh := openingHigh
+            initialLow := commonAnchor(false, openingHigh, matchTolerance)
+        float anchorRange = initialHigh - initialLow
+        qualified := direction != 0 and not na(anchorRange) and anchorRange > 0
+        activatedAt := qualified ? bar_index : na
+        if qualified and direction == 1
+            zoneTop := initialHigh - anchorRange * fibShallow
+            zoneBottom := initialHigh - anchorRange * fibDeep
+        else if qualified and direction == -1
+            zoneTop := initialLow + anchorRange * fibDeep
+            zoneBottom := initialLow + anchorRange * fibShallow
 
 // Strict pivots: two strictly lower highs / higher lows on EACH side.
 // Only use windows wholly inside today's regular session.
@@ -166,6 +212,8 @@ bool displayRange = frozen and showRange and (entries or lastMorningBar)
 plot(ema9, "9 EMA", color = color.orange, linewidth = 2)
 plot(displayRange ? morningHigh : na, "Morning high", color = color.new(color.green, 40), style = plot.style_linebr)
 plot(displayRange ? morningLow : na, "Morning low", color = color.new(color.red, 40), style = plot.style_linebr)
+plot(displayRange ? initialHigh : na, "Initial Fibonacci high anchor", color = color.blue, style = plot.style_linebr)
+plot(displayRange ? initialLow : na, "Initial Fibonacci low anchor", color = color.blue, style = plot.style_linebr)
 upperPlot = plot(displayZone ? zoneTop : na, "Golden zone upper", color = color.rgb(212, 175, 55), style = plot.style_linebr)
 lowerPlot = plot(displayZone ? zoneBottom : na, "Golden zone lower", color = color.rgb(212, 175, 55), style = plot.style_linebr)
 fill(upperPlot, lowerPlot, color = color.new(color.yellow, 85), title = "Golden zone")
