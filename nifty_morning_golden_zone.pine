@@ -20,9 +20,7 @@ if barstate.isfirst
 int dateKey = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
 bool newDay = barstate.isfirst or dateKey != dateKey[1]
 bool morning = not na(time(timeframe.period, "0915-1000:23456", TZ))
-bool earlySession = not na(time(timeframe.period, "0915-1015:23456", TZ))
 bool entries = not na(time(timeframe.period, "1015-1530:23456", TZ))
-bool regular = not na(time(timeframe.period, "0915-1530:23456", TZ))
 bool firstMorningBar = morning and hour(time, TZ) == 9 and minute(time, TZ) == 15
 bool lastMorningBar = morning and hour(time_close, TZ) == 10 and minute(time_close, TZ) == 0
 
@@ -45,16 +43,6 @@ var float lastSwingLow = na
 var int lastHighBar = na
 var int lastLowBar = na
 var int touchBar = na
-// Retain the last completed swing until the next trading session starts.
-var int trackedSession = na
-var int completedDirection = 0
-var float completedHigh = na
-var float completedLow = na
-var int earlyDirection = 0
-var float earlyTop = na
-var float earlyBottom = na
-var bool earlyActive = false
-var int earlyTouchBar = na
 
 if newDay
     morningHigh := na
@@ -76,20 +64,6 @@ if newDay
     lastHighBar := na
     lastLowBar := na
     touchBar := na
-    earlyActive := false
-    earlyTouchBar := na
-
-if barstate.isconfirmed and regular and (na(trackedSession) or trackedSession != dateKey)
-    earlyDirection := completedDirection
-    float previousRange = completedHigh - completedLow
-    earlyActive := firstMorningBar and earlyDirection != 0 and previousRange > 0
-    earlyTop := earlyDirection == 1 ? completedHigh - previousRange * fibShallow : completedLow + previousRange * fibDeep
-    earlyBottom := earlyDirection == 1 ? completedHigh - previousRange * fibDeep : completedLow + previousRange * fibShallow
-    earlyTouchBar := na
-    trackedSession := dateKey
-    completedDirection := 0
-    completedHigh := na
-    completedLow := na
 
 if morning and barstate.isconfirmed
     if firstMorningBar
@@ -116,6 +90,7 @@ if morning and barstate.isconfirmed
 
 // Strict pivots: two strictly lower highs / higher lows on EACH side.
 // Only use windows wholly inside today's regular session.
+bool regular = not na(time(timeframe.period, "0915-1530:23456", TZ))
 bool pivotWindow = bar_index >= 4 and dateKey == dateKey[4] and regular and regular[1] and regular[2] and regular[3] and regular[4]
 bool pivotHigh = pivotWindow and high[2] > high[4] and high[2] > high[3] and high[2] > high[1] and high[2] > high
 bool pivotLow = pivotWindow and low[2] < low[4] and low[2] < low[3] and low[2] < low[1] and low[2] < low
@@ -138,10 +113,6 @@ if barstate.isconfirmed and regular
     // Ignore it for both anchors and replacement zones.
     if pivotHigh and not pivotLow
         int endpoint = bar_index - 2
-        if not na(lastLowBar) and lastLowBar < endpoint and high[2] > lastSwingLow
-            completedDirection := 1
-            completedHigh := high[2]
-            completedLow := lastSwingLow
         if entries and waitingForSwing and direction == 1 and endpoint >= brokenAt and not na(lastLowBar) and lastLowBar < endpoint and high[2] > lastSwingLow
             float swingRange = high[2] - lastSwingLow
             float candidateBottom = high[2] - swingRange * fibDeep
@@ -156,10 +127,6 @@ if barstate.isconfirmed and regular
         lastHighBar := endpoint
     if pivotLow and not pivotHigh
         int endpoint = bar_index - 2
-        if not na(lastHighBar) and lastHighBar < endpoint and lastSwingHigh > low[2]
-            completedDirection := -1
-            completedHigh := lastSwingHigh
-            completedLow := low[2]
         if entries and waitingForSwing and direction == -1 and endpoint >= brokenAt and not na(lastHighBar) and lastHighBar < endpoint and lastSwingHigh > low[2]
             float swingRange = lastSwingHigh - low[2]
             float candidateTop = low[2] + swingRange * fibDeep
@@ -175,28 +142,6 @@ if barstate.isconfirmed and regular
 float ema9 = ta.ema(close, 9)
 bool emaCrossUp = ta.crossover(close, ema9)
 bool emaCrossDown = ta.crossunder(close, ema9)
-// The previous-day zone is single-use and never reverses or gets replaced.
-if barstate.isconfirmed
-    if not earlySession
-        earlyActive := false
-        earlyTouchBar := na
-    else if earlyActive
-        bool earlyBroken = earlyDirection == 1 ? close < earlyBottom : close > earlyTop
-        if earlyBroken
-            earlyActive := false
-            earlyTouchBar := na
-        else if not na(earlyTouchBar) and bar_index - earlyTouchBar > 3
-            earlyTouchBar := na
-bool earlyWindow = not na(earlyTouchBar) and bar_index > earlyTouchBar and bar_index - earlyTouchBar <= 3
-bool earlyCanSignal = barstate.isconfirmed and earlySession and earlyActive and earlyWindow and (not onePerDay or not signaled)
-bool earlyBuy = earlyCanSignal and earlyDirection == 1 and close > open and emaCrossUp
-bool earlySell = earlyCanSignal and earlyDirection == -1 and close < open and emaCrossDown
-if earlyBuy or earlySell
-    earlyActive := false
-    earlyTouchBar := na
-    signaled := true
-else if barstate.isconfirmed and earlySession and earlyActive and low <= earlyTop and high >= earlyBottom
-    earlyTouchBar := bar_index
 // Evaluate entry from the previous touch before a retouch restarts the window.
 bool touchesZone = qualified and low <= zoneTop and high >= zoneBottom
 if barstate.isconfirmed
@@ -207,8 +152,8 @@ if barstate.isconfirmed
             touchBar := na
 bool withinTouchWindow = not na(touchBar) and bar_index > touchBar and bar_index - touchBar <= 3
 bool canSignal = barstate.isconfirmed and entries and qualified and withinTouchWindow and bar_index > activatedAt and (not onePerDay or not signaled)
-bool buySignal = earlyBuy or (canSignal and direction == 1 and close > open and emaCrossUp)
-bool sellSignal = earlySell or (canSignal and direction == -1 and close < open and emaCrossDown)
+bool buySignal = canSignal and direction == 1 and close > open and emaCrossUp
+bool sellSignal = canSignal and direction == -1 and close < open and emaCrossDown
 if buySignal or sellSignal
     signaled := true
     touchBar := na
@@ -224,9 +169,6 @@ plot(displayRange ? morningLow : na, "Morning low", color = color.new(color.red,
 upperPlot = plot(displayZone ? zoneTop : na, "Golden zone upper", color = color.rgb(212, 175, 55), style = plot.style_linebr)
 lowerPlot = plot(displayZone ? zoneBottom : na, "Golden zone lower", color = color.rgb(212, 175, 55), style = plot.style_linebr)
 fill(upperPlot, lowerPlot, color = color.new(color.yellow, 85), title = "Golden zone")
-earlyUpperPlot = plot(earlySession and earlyActive ? earlyTop : na, "Previous-day zone upper", color = color.aqua, style = plot.style_linebr)
-earlyLowerPlot = plot(earlySession and earlyActive ? earlyBottom : na, "Previous-day zone lower", color = color.aqua, style = plot.style_linebr)
-fill(earlyUpperPlot, earlyLowerPlot, color = color.new(color.aqua, 85), title = "Previous-day golden zone")
 plotshape(buySignal, title = "Buy signal", style = shape.labelup, location = location.belowbar, color = color.green, text = "BUY", textcolor = color.white, size = size.small)
 plotshape(sellSignal, title = "Sell signal", style = shape.labeldown, location = location.abovebar, color = color.red, text = "SELL", textcolor = color.white, size = size.small)
 alertcondition(buySignal, title = "Nifty golden zone BUY", message = "BUY: {{ticker}} {{interval}} bullish candle crossed above the 9 EMA within 3 candles after a golden-zone touch. Close: {{close}}")
